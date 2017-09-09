@@ -18,9 +18,19 @@
 
 using namespace std;
 
+/**
+ * Snapshot for vehicle
+ */
+struct Snapshot {
+    int lane;
+    int s;
+    int v;
+    int a;
+    string state;
+};
+
 class Vehicle {
 public:
-
     struct collider{
 
         bool collision ; // is there a collision?
@@ -89,6 +99,11 @@ public:
     void realize_prep_lane_change(map<int,vector< vector<int> > > predictions, string direction);
 
     vector<vector<int> > generate_predictions(int horizon);
+
+private:
+    vector<Snapshot> trajectoryForState(string state, map<int, vector <vector<int> > > predictions, int horizon=5);
+    Snapshot getSnapshot();
+    void restoreSnapshot(Snapshot snapshot);
 
 };
 
