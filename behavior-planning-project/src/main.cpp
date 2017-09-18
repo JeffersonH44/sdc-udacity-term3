@@ -174,7 +174,7 @@ vector<double> getXY(double s, double d, const vector<double> &maps_s, const vec
 
 int main() {
   uWS::Hub h;
-    BehaviorPlanner behaviorPlanner(LANES, STARTING_LANE, LANE_WIDTH, MAX_VELOCITY, SAFE_DISTANCE);
+    BehaviorPlanner* behaviorPlanner = new BehaviorPlanner(LANES, STARTING_LANE, LANE_WIDTH, MAX_VELOCITY, SAFE_DISTANCE);
 
   // Load up map values for waypoint's x,y,s and d normalized normal vectors
   vector<double> map_waypoints_x;
@@ -253,7 +253,7 @@ int main() {
                 car_s = end_path_s;
             }
 
-            auto output = behaviorPlanner.predict(car_s, car_speed, prevSize, sensor_fusion);
+            pair<int, double> output = behaviorPlanner->predict(car_s, car_speed, prevSize, sensor_fusion);
             int predLane = output.first;
             double predSpeed = output.second;
 
