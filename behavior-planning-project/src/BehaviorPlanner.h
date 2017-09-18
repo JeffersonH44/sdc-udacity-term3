@@ -19,7 +19,7 @@ public:
     BehaviorPlanner(int lanes, int startingLane, double laneWidth, double maxVelocity, double safeDistance);
     pair<int, double> predict(double carS, double carSpeed, int pathSize, auto sensorFusion);
 private:
-    static const enum SensorFusion {
+    enum SensorFusion {
         ID = 0,
         X = 1,
         Y = 2,
