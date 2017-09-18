@@ -5,9 +5,11 @@
 #include <iostream>
 #include <thread>
 #include <vector>
+#include <typeinfo>
 #include "Eigen-3.3/Eigen/Core"
 #include "Eigen-3.3/Eigen/QR"
 #include "json.hpp"
+#include "BehaviorPlanner.h"
 
 using namespace std;
 
@@ -16,6 +18,15 @@ using json = nlohmann::json;
 
 // For converting back and forth between radians and degrees.
 constexpr double pi() { return M_PI; }
+
+// constants for the highway
+const int LANES = 3;
+const int STARTING_LANE = 1;
+const double LANE_WIDTH = 4;
+const double MAX_VELOCITY = 50.0;
+const double SAFE_DISTANCE = 30.0;
+
+
 double deg2rad(double x) { return x * pi() / 180; }
 double rad2deg(double x) { return x * 180 / pi(); }
 
@@ -196,6 +207,8 @@ int main() {
   	map_waypoints_dy.push_back(d_y);
   }
 
+    BehaviorPlanner behaviorPlanner(LANES, STARTING_LANE, LANE_WIDTH, MAX_VELOCITY, SAFE_DISTANCE);
+
   h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                      uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
@@ -233,7 +246,30 @@ int main() {
           	// Sensor Fusion Data, a list of all other cars on the same side of the road.
           	auto sensor_fusion = j[1]["sensor_fusion"];
 
-          	json msgJson;
+            int prevSize = previous_path_x.size();
+
+            if(prevSize > 0) {
+                car_s = end_path_s;
+            }
+
+            auto output = behaviorPlanner.predict(car_s, car_speed, prevSize, sensor_fusion);
+            int currentLane = output.first;
+            double predSpeed = output.second;
+
+            vector<double> interpolateX;
+            vector<double> interpolateY;
+
+            double startX, startY, startYaw;
+
+            if(prevSize < 2) {
+                startX = car_x;
+                startY = car_y;
+                startYaw = deg2rad(car_yaw);
+            } else {
+
+            }
+
+            json msgJson;
 
           	vector<double> next_x_vals;
           	vector<double> next_y_vals;
@@ -243,16 +279,20 @@ int main() {
 			double dist_inc = 0.5;
 			for(int i = 0; i < 50; i++)
 			{
-				next_x_vals.push_back(car_x+(dist_inc*i)*cos(deg2rad(car_yaw)));
-				next_y_vals.push_back(car_y+(dist_inc*i)*sin(deg2rad(car_yaw)));
+				double x = car_x + (dist_inc * i) * cos(deg2rad(car_yaw));
+				double y = car_y + (dist_inc * i) * sin(deg2rad(car_yaw));
+				cout << "(" << x << ", " << y << ")" << endl;
+				next_x_vals.push_back(x);
+				next_y_vals.push_back(y);
 			}
+
 
           	msgJson["next_x"] = next_x_vals;
           	msgJson["next_y"] = next_y_vals;
 
           	auto msg = "42[\"control\","+ msgJson.dump()+"]";
 
-          	//this_thread::sleep_for(chrono::milliseconds(1000));
+          	this_thread::sleep_for(chrono::milliseconds(1000));
           	ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
           
         }
