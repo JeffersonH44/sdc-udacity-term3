@@ -1,13 +1,17 @@
 #include <fstream>
-#include <math.h>
+#include <cmath>
 #include <uWS/uWS.h>
 #include <chrono>
 #include <iostream>
 #include <thread>
 #include <vector>
+#include <utility>
+
 #include "Eigen-3.3/Eigen/Core"
 #include "Eigen-3.3/Eigen/QR"
 #include "json.hpp"
+#include "BehaviorPlanner.h"
+#include "spline.h"
 
 using namespace std;
 
@@ -16,6 +20,15 @@ using json = nlohmann::json;
 
 // For converting back and forth between radians and degrees.
 constexpr double pi() { return M_PI; }
+
+// constants for the highway
+const int LANES = 3;
+const int STARTING_LANE = 1;
+const double LANE_WIDTH = 4;
+const double MAX_VELOCITY = 50.0;
+const double SAFE_DISTANCE = 30.0;
+
+
 double deg2rad(double x) { return x * pi() / 180; }
 double rad2deg(double x) { return x * 180 / pi(); }
 
@@ -161,6 +174,7 @@ vector<double> getXY(double s, double d, const vector<double> &maps_s, const vec
 
 int main() {
   uWS::Hub h;
+    BehaviorPlanner* behaviorPlanner = new BehaviorPlanner(LANES, STARTING_LANE, LANE_WIDTH, MAX_VELOCITY, SAFE_DISTANCE);
 
   // Load up map values for waypoint's x,y,s and d normalized normal vectors
   vector<double> map_waypoints_x;
@@ -196,7 +210,7 @@ int main() {
   	map_waypoints_dy.push_back(d_y);
   }
 
-  h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
+  h.onMessage([&behaviorPlanner, &map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                      uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
     // The 4 signifies a websocket message
@@ -233,26 +247,106 @@ int main() {
           	// Sensor Fusion Data, a list of all other cars on the same side of the road.
           	auto sensor_fusion = j[1]["sensor_fusion"];
 
-          	json msgJson;
+            int prevSize = previous_path_x.size();
+
+            if(prevSize > 0) {
+                car_s = end_path_s;
+            }
+
+            pair<int, double> output = behaviorPlanner->predict(car_s, car_speed, prevSize, sensor_fusion);
+            int predLane = output.first;
+            double predSpeed = output.second;
+
+            vector<double> interpolateX;
+            vector<double> interpolateY;
+
+            double startX, startY, startYaw, prevStartX, prevStartY;
+
+            if(prevSize < 2) {
+                startX = car_x;
+                startY = car_y;
+                startYaw = deg2rad(car_yaw);
+
+                prevStartX = startX - cos(startYaw);
+                prevStartY = startY - sin(startYaw);
+            } else {
+                startX = previous_path_x[prevSize - 1];
+                startY = previous_path_y[prevSize - 1];
+                prevStartX = previous_path_x[prevSize - 2];
+                prevStartY = previous_path_y[prevSize - 2];
+                startYaw = atan2(startX - prevStartX, startY - prevStartY);
+            }
+
+            interpolateX.push_back(prevStartX);
+            interpolateY.push_back(prevStartY);
+
+            interpolateX.push_back(startX);
+            interpolateY.push_back(startY);
+
+            unsigned long startingPoints = 3;
+            double space = 30.0;
+            for(unsigned long i = 0; i < startingPoints; ++i) {
+                auto current = getXY(car_s + (i * space), 2 + 4 * predLane, map_waypoints_s, map_waypoints_x, map_waypoints_y);
+                interpolateX.push_back(current[0]);
+                interpolateY.push_back(current[1]);
+            }
+
+
+            // set origin to the starting position of the car
+            for(int i = 0; i < interpolateX.size(); ++i) {
+                double originX = interpolateX[i] - startX;
+                double originY = interpolateY[i] - startY;
+
+                interpolateX[i] = originX * cos(-startYaw) - originY * sin(-startYaw);
+                interpolateY[i] = originX * sin(-startYaw) + originY * cos(-startYaw);
+            }
+
+            tk::spline splinePred;
+            splinePred.set_points(interpolateX, interpolateY);
+
+            json msgJson;
 
           	vector<double> next_x_vals;
           	vector<double> next_y_vals;
 
+            for (int i = 0; i < previous_path_x.size(); ++i) {
+                next_x_vals.push_back(previous_path_x[i]);
+                next_y_vals.push_back(previous_path_y[i]);
+            }
+
+            double targetX = 30.0;
+            double targetY = splinePred(targetX);
+            double targetDist = sqrt(targetX * targetX + targetY * targetY);
+            int totalPoints = 50 - prevSize;
+            double N = (targetDist / (0.02 * predSpeed / 2.24));
+            double x = 0.0;
+
+            for (int i = 0; i < totalPoints; ++i) {
+                x += (targetX / N);
+                double y = splinePred(x);
+
+                double globalX = x;
+                double globalY = y;
+
+                globalX = globalX * cos(startYaw) - globalX * sin(startYaw);
+                globalY = globalY * sin(startYaw) + globalY * sin(startYaw);
+                globalX += startX;
+                globalY += startY;
+
+                next_x_vals.push_back(globalX);
+                next_y_vals.push_back(globalY);
+            }
+
 
           	// TODO: define a path made up of (x,y) points that the car will visit sequentially every .02 seconds
-			double dist_inc = 0.5;
-			for(int i = 0; i < 50; i++)
-			{
-				next_x_vals.push_back(car_x+(dist_inc*i)*cos(deg2rad(car_yaw)));
-				next_y_vals.push_back(car_y+(dist_inc*i)*sin(deg2rad(car_yaw)));
-			}
+
 
           	msgJson["next_x"] = next_x_vals;
           	msgJson["next_y"] = next_y_vals;
 
           	auto msg = "42[\"control\","+ msgJson.dump()+"]";
 
-          	//this_thread::sleep_for(chrono::milliseconds(1000));
+          	this_thread::sleep_for(chrono::milliseconds(1000));
           	ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
           
         }
