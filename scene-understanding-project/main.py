@@ -84,11 +84,18 @@ def layers(vgg_layer3_out, vgg_layer4_out, vgg_layer7_out, num_classes):
                                          kernel_initializer=initializer)
     sum2 = tf.add(deconv2, skip_layer2)
 
-    output = tf.layers.conv2d_transpose(sum2, num_classes, 16, strides=(8, 8), padding='same',
+    # grow up the last layer on 3 layers of 2 instead of 8
+    output1 = tf.layers.conv2d_transpose(sum2, num_classes, 4, strides=(2, 2), padding='same',
                                         kernel_regularizer=regularizer,
                                         kernel_initializer=initializer)
+    output2 = tf.layers.conv2d_transpose(output1, num_classes, 4, strides=(2, 2), padding='same',
+                                         kernel_regularizer=regularizer,
+                                         kernel_initializer=initializer)
+    output3 = tf.layers.conv2d_transpose(output2, num_classes, 4, strides=(2, 2), padding='same',
+                                         kernel_regularizer=regularizer,
+                                         kernel_initializer=initializer)
 
-    return output
+    return output3
 
 
 tests.test_layers(layers)
@@ -162,9 +169,9 @@ tests.test_train_nn(train_nn)
 
 def run():
     # params
-    epochs = 20
+    epochs = 10
     batch_size = 30
-    learning_rate = tf.constant(0.0005)
+    learning_rate = tf.constant(0.0001)
 
     num_classes = 2
     image_shape = (160, 576)
