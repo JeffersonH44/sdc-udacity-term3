@@ -60,26 +60,33 @@ def layers(vgg_layer3_out, vgg_layer4_out, vgg_layer7_out, num_classes):
     """
     # TODO: Implement function
     # encoder
-    regularizer = tf.contrib.layers.l2_regularizer(1e-3)
+    regularizer = tf.contrib.layers.l2_regularizer(1e-2)
+    initializer = tf.truncated_normal_initializer(stddev=0.01)
 
     conv_1x1 = tf.layers.conv2d(vgg_layer7_out, num_classes, 1, padding='same',
-                                kernel_regularizer=regularizer)
+                                kernel_regularizer=regularizer,
+                                kernel_initializer=initializer)
     skip_layer1 = tf.layers.conv2d(vgg_layer4_out, num_classes, 1, padding='same',
-                                   kernel_regularizer=regularizer)
+                                   kernel_regularizer=regularizer,
+                                   kernel_initializer=initializer)
     skip_layer2 = tf.layers.conv2d(vgg_layer3_out, num_classes, 1, padding='same',
-                                   kernel_regularizer=regularizer)
+                                   kernel_regularizer=regularizer,
+                                   kernel_initializer=initializer)
 
     # upsample encoder output
     deconv1 = tf.layers.conv2d_transpose(conv_1x1, num_classes, 4, strides=(2, 2), padding='same',
-                                         kernel_regularizer=regularizer)
+                                         kernel_regularizer=regularizer,
+                                         kernel_initializer=initializer)
     sum1 = tf.add(deconv1, skip_layer1)
 
     deconv2 = tf.layers.conv2d_transpose(sum1, num_classes, 4, strides=(2, 2), padding='same',
-                                         kernel_regularizer=regularizer)
+                                         kernel_regularizer=regularizer,
+                                         kernel_initializer=initializer)
     sum2 = tf.add(deconv2, skip_layer2)
 
     output = tf.layers.conv2d_transpose(sum2, num_classes, 16, strides=(8, 8), padding='same',
-                                        kernel_regularizer=regularizer)
+                                        kernel_regularizer=regularizer,
+                                        kernel_initializer=initializer)
 
     return output
 
@@ -127,9 +134,9 @@ def train_nn(sess, epochs, batch_size, get_batches_fn, train_op, cross_entropy_l
     sess.run(tf.global_variables_initializer())
 
     for i in range(epochs):
-        print("Epoch:", i)
+        print("Epoch:", i + 1)
 
-        if i > 0 and i % 5 == 0:
+        if i > 0 and i % 3 == 0:
             saver = tf.train.Saver()
             path = os.path.join("./weights", 'fcn_weights-epoch-%d.ckpt' % i)
             saver.save(sess, path)
@@ -155,9 +162,9 @@ tests.test_train_nn(train_nn)
 
 def run():
     # params
-    epochs = 6
-    learning_rate = tf.constant(0.0001)
-    keep_prob = 0.6
+    epochs = 20
+    batch_size = 30
+    learning_rate = tf.constant(0.0005)
 
     num_classes = 2
     image_shape = (160, 576)
@@ -188,7 +195,7 @@ def run():
         logits, train_op, cross_entropy_loss = optimize(output, correct_label, learning_rate, num_classes)
 
         # TODO: Train NN using the train_nn function
-        train_nn(sess, epochs, 15, get_batches_fn, train_op, cross_entropy_loss, input_image,
+        train_nn(sess, epochs, batch_size, get_batches_fn, train_op, cross_entropy_loss, input_image,
                  correct_label, keep_prob, learning_rate)
 
         # TODO: Save inference data using helper.save_inference_samples
