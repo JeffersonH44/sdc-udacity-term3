@@ -41,99 +41,6 @@ string hasData(string s)
 	return "";
 }
 
-double distance(double x1, double y1, double x2, double y2)
-{
-	return sqrt((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1));
-}
-int ClosestWaypoint(double x, double y, vector<double> maps_x, vector<double> maps_y)
-{
-
-	double closestLen = 100000; //large number
-	int closestWaypoint = 0;
-
-	for (int i = 0; i < maps_x.size(); i++)
-	{
-		double map_x = maps_x[i];
-		double map_y = maps_y[i];
-		double dist = distance(x, y, map_x, map_y);
-		if (dist < closestLen)
-		{
-			closestLen = dist;
-			closestWaypoint = i;
-		}
-	}
-
-	return closestWaypoint;
-}
-
-int NextWaypoint(double x, double y, double theta, vector<double> maps_x, vector<double> maps_y)
-{
-
-	int closestWaypoint = ClosestWaypoint(x, y, maps_x, maps_y);
-
-	double map_x = maps_x[closestWaypoint];
-	double map_y = maps_y[closestWaypoint];
-
-	double heading = atan2((map_y - y), (map_x - x));
-
-	double angle = abs(theta - heading);
-
-	if (angle > pi() / 4)
-	{
-		closestWaypoint++;
-	}
-
-	return closestWaypoint;
-}
-
-// Transform from Cartesian x,y coordinates to Frenet s,d coordinates
-vector<double> getFrenet(double x, double y, double theta, vector<double> maps_x, vector<double> maps_y)
-{
-	int next_wp = NextWaypoint(x, y, theta, maps_x, maps_y);
-
-	int prev_wp;
-	prev_wp = next_wp - 1;
-	if (next_wp == 0)
-	{
-		prev_wp = maps_x.size() - 1;
-	}
-
-	double n_x = maps_x[next_wp] - maps_x[prev_wp];
-	double n_y = maps_y[next_wp] - maps_y[prev_wp];
-	double x_x = x - maps_x[prev_wp];
-	double x_y = y - maps_y[prev_wp];
-
-	// find the projection of x onto n
-	double proj_norm = (x_x * n_x + x_y * n_y) / (n_x * n_x + n_y * n_y);
-	double proj_x = proj_norm * n_x;
-	double proj_y = proj_norm * n_y;
-
-	double frenet_d = distance(x_x, x_y, proj_x, proj_y);
-
-	//see if d value is positive or negative by comparing it to a center point
-
-	double center_x = 1000 - maps_x[prev_wp];
-	double center_y = 2000 - maps_y[prev_wp];
-	double centerToPos = distance(center_x, center_y, x_x, x_y);
-	double centerToRef = distance(center_x, center_y, proj_x, proj_y);
-
-	if (centerToPos <= centerToRef)
-	{
-		frenet_d *= -1;
-	}
-
-	// calculate s value
-	double frenet_s = 0;
-	for (int i = 0; i < prev_wp; i++)
-	{
-		frenet_s += distance(maps_x[i], maps_y[i], maps_x[i + 1], maps_y[i + 1]);
-	}
-
-	frenet_s += distance(0, 0, proj_x, proj_y);
-
-	return {frenet_s, frenet_d};
-}
-
 // Transform from Frenet s,d coordinates to Cartesian x,y
 vector<double> getXY(double s, double d, vector<double> maps_s, vector<double> maps_x, vector<double> maps_y)
 {
@@ -201,11 +108,11 @@ int main()
 	}
 
 	// some initial constants given the simulator
-	double ref_vel = 0.0;
+	double reference_velocity = 0.0;
 	int lane = 1;
 	double max_velocity = LIMITS::MAX_VELOCITY;
 
-	h.onMessage([&ref_vel, &lane, &max_velocity, &map_waypoints_x, &map_waypoints_y, &map_waypoints_s, &map_waypoints_dx, &map_waypoints_dy](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
+	h.onMessage([&reference_velocity, &lane, &max_velocity, &map_waypoints_x, &map_waypoints_y, &map_waypoints_s, &map_waypoints_dx, &map_waypoints_dy](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
 																																			 uWS::OpCode opCode) {
 		// "42" at the start of the message means there's a websocket message event.
 		// The 4 signifies a websocket message
@@ -245,9 +152,9 @@ int main()
 					// Sensor Fusion Data, a list of all other cars on the same side of the road.
 					auto sensor_fusion = j[1][LOCALIZATION::SENSOR_FUSION_DATA];
 
-					int prev_size = previous_path_x.size();
+					int previous_size = previous_path_x.size();
 
-					if (prev_size > 0)
+					if (previous_size > 0)
 					{
 						car_s = end_path_s;
 					}
@@ -255,24 +162,25 @@ int main()
 					bool is_too_close = false;
 					bool is_left_available = true;
 					bool is_right_available = true;
-					//set safe distance
-					double safe_distance = 40.0;
-
-					//find ref_v to use
 
 					for (int i = 0; i < sensor_fusion.size(); ++i)
 					{
+						// get Frenet coordinates
 						double s = sensor_fusion[i][SENSOR_FUSION::S];
 						float d = sensor_fusion[i][SENSOR_FUSION::D];
+
+						// get velocity
 						double vx = sensor_fusion[i][SENSOR_FUSION::VX];
 						double vy = sensor_fusion[i][SENSOR_FUSION::VY];
-						double check_speed = euclideanDistance(vx, vy);
-						double check_car_s = s + ((double)prev_size * 0.02 * check_speed);
+
+						double speed = euclideanDistance(vx, vy);
+						double check_car_s = s + ((double)previous_size * 0.02 * speed);
 
 						// if car is in our lane
-						if (onSameLane(d, lane) && (check_car_s > car_s) && (check_car_s - car_s) < LIMITS::SAFE_DISTANCE)
+						if (onSameLane(d, lane) && (check_car_s > car_s) && isNotSafe(car_s, check_car_s))
 						{
-							max_velocity = 29.5;
+							// max velocity in case of a car in front
+							max_velocity = 30.0;
 							is_too_close = true;
 						}
 
@@ -282,162 +190,132 @@ int main()
 
 						if (left_lane >= 0 && is_left_available && onSameLane(d, left_lane))
 						{
-							if (((check_car_s > car_s) && isSafe(car_s, check_car_s)) || ((check_car_s < car_s) && isSafe(car_s, check_car_s)))
-							{
-								is_left_available = false;
-							}
+							is_left_available = !isNotSafe(car_s, check_car_s);
 						}
 
 						if (right_lane <= 2 && is_right_available && onSameLane(d, right_lane))
 						{
-							if (((check_car_s > car_s) && isSafe(car_s, check_car_s)) || ((check_car_s < car_s) && isSafe(car_s, check_car_s)))
-							{
-								is_right_available = false;
-							}
+							is_right_available = !isNotSafe(car_s, check_car_s);
 						}
 					}
+					
+					cout << "max vel " << max_velocity << endl;
 
 					if (is_too_close)
 					{
-						//slow down
-						ref_vel -= LIMITS::ACCELERATION;
+						// slow down only if it's above of the established max limit
+						if (reference_velocity > max_velocity) {
+							reference_velocity -= LIMITS::BRAKE;
+						}
+
 						if (lane > 0 && is_left_available)
 						{
 							lane -= 1;
-							cout << "Change Left!" << endl;
 							max_velocity = LIMITS::MAX_VELOCITY;
 						}
 						else if (lane < 2 && is_right_available)
 						{
 							lane += 1;
-							cout << "Change Right!" << endl;
 							max_velocity = LIMITS::MAX_VELOCITY;
 						}
 					}
-					else if (ref_vel < max_velocity)
+					else if (reference_velocity < max_velocity)
 					{
-						ref_vel += LIMITS::ACCELERATION;
+						reference_velocity += LIMITS::ACCELERATION;
 					}
 					else
 					{
 						max_velocity = LIMITS::MAX_VELOCITY;
 					}
 
-					cout << "current max velocity " << max_velocity << endl;
+					// create a list of widely spaced (x, y) waypoints, evenly spaced at LIMITS::PREDICT_DISTANCE meters
+					vector<double> points_x;
+					vector<double> points_y;
 
-					//create a list of widely spaced (x, y) waypoints, evenly spaced at 30m
-					//later we will interpolate these waypoint with a spline and fill in with more points
+					// reference values of the car current position
+					double reference_x = car_x;
+					double reference_y = car_y;
+					double reference_yaw;
 
-					vector<double> ptsx;
-					vector<double> ptsy;
-
-					// reference x, y, yaw states
-					// either we will reference the starting points as where the car is or at the previous paths end point
-					double ref_x = car_x;
-					double ref_y = car_y;
-					double ref_yaw = deg2rad(car_yaw);
-
-					if (prev_size < 2)
+					if (previous_size < 2)
 					{
-						// if previous size is almost empty, use the car as starting reference.
-						//use two points that make the path tagent to the car
+						// if there's no previous points, just calculate two poinst with the car's tangent previous point
 						double prev_car_x = car_x - cos(car_yaw);
 						double prev_car_y = car_y - sin(car_yaw);
+						reference_yaw = deg2rad(car_yaw);
 
-						ptsx.push_back(prev_car_x);
-						ptsx.push_back(car_x);
+						points_x.push_back(prev_car_x);
+						points_x.push_back(car_x);
 
-						ptsy.push_back(prev_car_y);
-						ptsy.push_back(car_y);
+						points_y.push_back(prev_car_y);
+						points_y.push_back(car_y);
 					}
 					else
 					{
-						// use the previous path's end point as starting reference
-						//redefine reference state as previous path end point
-						ref_x = previous_path_x[prev_size - 1];
-						ref_y = previous_path_y[prev_size - 1];
+						// use the previous path's end point as starting reference for predictions
+						reference_x = previous_path_x[previous_size - 1];
+						reference_y = previous_path_y[previous_size - 1];
 
-						double ref_x_prev = previous_path_x[prev_size - 2];
-						double ref_y_prev = previous_path_y[prev_size - 2];
-						ref_yaw = atan2(ref_y - ref_y_prev, ref_x - ref_x_prev);
+						double reference_x_prev = previous_path_x[previous_size - 2];
+						double reference_y_prev = previous_path_y[previous_size - 2];
+						reference_yaw = atan2(reference_y - reference_y_prev, reference_x - reference_x_prev);
 
-						//use two points that make the path tangent to the previous path's end point
-						ptsx.push_back(ref_x_prev);
-						ptsx.push_back(ref_x);
+						points_x.push_back(reference_x_prev);
+						points_x.push_back(reference_x);
 
-						ptsy.push_back(ref_y_prev);
-						ptsy.push_back(ref_y);
+						points_y.push_back(reference_y_prev);
+						points_y.push_back(reference_y);
 					}
 
-					//In Frenet add evenly 30m spaced points ahead of the starting reference
-					vector<double> next_wp0 = getXY(car_s + 30, (2 + 4 * lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
-					vector<double> next_wp1 = getXY(car_s + 60, (2 + 4 * lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
-					vector<double> next_wp2 = getXY(car_s + 90, (2 + 4 * lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
+					// (we will predict over LIMITS::PREDICTION_HORIZON * LIMITS::PREDICT_DISTANCE meters)
+					for(int i = 1; i <= LIMITS::PREDICTION_HORIZON; ++i) {
+						vector<double> waypoint = getXY(car_s + i * LIMITS::PREDICT_DISTANCE, (2 + 4 * lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
+						points_x.push_back(waypoint[0]);
+						points_y.push_back(waypoint[1]);
+					}
 
-					ptsx.push_back(next_wp0[0]);
-					ptsx.push_back(next_wp1[0]);
-					ptsx.push_back(next_wp2[0]);
-
-					ptsy.push_back(next_wp0[1]);
-					ptsy.push_back(next_wp1[1]);
-					ptsy.push_back(next_wp2[1]);
-
-					for (int i = 0; i < ptsx.size(); ++i)
+					// put all the points on the original reference for the cubic interpolation (in this case the current car position)
+					for (int i = 0; i < points_x.size(); ++i)
 					{
-						//shift orgin to ref
-						double shift_x = ptsx[i] - ref_x;
-						double shift_y = ptsy[i] - ref_y;
-
-						ptsx[i] = shift_x * cos(0 - ref_yaw) - shift_y * sin(0 - ref_yaw);
-						ptsy[i] = shift_x * sin(0 - ref_yaw) + shift_y * cos(0 - ref_yaw);
+						double shift_x = points_x[i] - reference_x;
+						double shift_y = points_y[i] - reference_y;
+						auto ans = changeCoordinates(shift_x, shift_y, -reference_yaw);
+						points_x[i] = ans[0]; 
+						points_y[i] = ans[1];
 					}
 
-					// create a spline
-					tk::spline s;
+					// cubic interpolation with the current points with the origin coordinates over the car
+					tk::spline spline;
+					spline.set_points(points_x, points_y);
 
-					// set (x,y) points to the spline
-					s.set_points(ptsx, ptsy);
-
-					//define the actual (x,y) points we will use for the planner
-					vector<double> next_x_vals;
-					vector<double> next_y_vals;
-
-					// start with all the previous path points from the last time
-					for (int i = 0; i < previous_path_x.size(); ++i)
-					{
-						next_x_vals.push_back(previous_path_x[i]);
-						next_y_vals.push_back(previous_path_y[i]);
-					}
+					// we fullfill all the previous points calculated on the step before to avoid same calculations over the spline
+					vector<double> next_x_vals(previous_path_x.begin(), previous_path_x.end());
+					vector<double> next_y_vals(previous_path_y.begin(), previous_path_y.end());
 
 					// calculate how to break up spline points so that we travel at our desired reference
-					double target_x = 30.0;
-					double target_y = s(target_x);
-					double target_dist = euclideanDistance(target_x, target_y); //sqrt(target_x * target_x + target_y * target_y);
+					double target_x = LIMITS::PREDICT_DISTANCE;
+					double target_y = spline(target_x);
+					double target_distance = euclideanDistance(target_x, target_y);
 
-					double x_add_on = 0;
+					// this is used to calculate the equally separated points on the x coordinate
+					double current_x = 0;
 
-					//fill up the rest of our path planner after filling it with the prev points, here we always use 50 points
-					for (int i = 1; i <= 50 - previous_path_x.size(); ++i)
+					// we always predict 50 points (included previous and predicted points)
+					for (int i = 1; i <= LIMITS::PREDICT_POINTS - previous_path_x.size(); ++i)
 					{
 
-						double N = (target_dist / (0.02 * ref_vel / 2.24));
-						double x_point = x_add_on + (target_x) / N;
-						double y_point = s(x_point);
+						double N = (target_distance / (0.02 * reference_velocity / 2.24));
+						double x_point = current_x + (target_x) / N;
+						double y_point = spline(x_point);
+						
+						// this is set for the next increment
+						current_x = x_point;
 
-						x_add_on = x_point;
-
-						double x_ref = x_point;
-						double y_ref = y_point;
-
-						//rotate back to global axis
-						x_point = x_ref * cos(ref_yaw) - y_ref * sin(ref_yaw);
-						y_point = x_ref * sin(ref_yaw) + y_ref * cos(ref_yaw);
-
-						x_point += ref_x;
-						y_point += ref_y;
-
-						next_x_vals.push_back(x_point);
-						next_y_vals.push_back(y_point);
+						// we have to rotate back to the global coordinates for the simulator
+						auto result = changeCoordinates(x_point, y_point, reference_yaw);
+						// also we add the car position on the global coordinates predicted
+						next_x_vals.push_back(result[0] + reference_x);
+						next_y_vals.push_back(result[1] + reference_y);
 					}
 
 					json msgJson;

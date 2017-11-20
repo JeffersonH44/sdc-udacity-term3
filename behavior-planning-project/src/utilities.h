@@ -3,6 +3,7 @@
 
 #include <string>
 #include <cmath>
+#include <vector>
 
 using namespace std;
 
@@ -16,23 +17,28 @@ enum SENSOR_FUSION {
 };
 
 namespace LOCALIZATION {
-    static string X = "x";
-    static string Y = "y";
-    static string S = "s";
-    static string D = "d";
-    static string YAW = "yaw";
-    static string SPEED = "speed";
-    static string PREV_PATH_X = "previous_path_x";
-    static string PREV_PATH_Y = "previous_path_y";
-    static string ENDING_S = "end_path_s";
-    static string ENDING_D = "end_path_d";
-    static string SENSOR_FUSION_DATA = "sensor_fusion";
+    const string X = "x";
+    const string Y = "y";
+    const string S = "s";
+    const string D = "d";
+    const string YAW = "yaw";
+    const string SPEED = "speed";
+    const string PREV_PATH_X = "previous_path_x";
+    const string PREV_PATH_Y = "previous_path_y";
+    const string ENDING_S = "end_path_s";
+    const string ENDING_D = "end_path_d";
+    const string SENSOR_FUSION_DATA = "sensor_fusion";
 };
 
 namespace LIMITS {
-    double MAX_VELOCITY = 49.5;
-    double ACCELERATION = 0.2;
-    double SAFE_DISTANCE = 25.0;
+    const double MAX_VELOCITY = 49.5;
+    const double ACCELERATION = 0.2;
+    const double BRAKE = 0.15;
+    const double SAFE_DISTANCE = 35.0;
+    const double PREDICT_DISTANCE = 25.0;
+
+    const int PREDICT_POINTS = 50;
+    const int PREDICTION_HORIZON = 3;
 }
 
 // utility functions
@@ -48,8 +54,15 @@ bool onSameLane(float car_d, int lane) {
     return low_lane_bound < car_d  && car_d < high_lane_bound;
 }
 
-bool isSafe(double s, double other_s) {
+bool isNotSafe(double s, double other_s) {
     return abs(s - other_s) < LIMITS::SAFE_DISTANCE;
+}
+
+vector<double> changeCoordinates(double x, double y, double yaw) {
+    return {
+        x * cos(yaw) - y * sin(yaw),
+        x * sin(yaw) + y * cos(yaw)
+    };
 }
 
 #endif
