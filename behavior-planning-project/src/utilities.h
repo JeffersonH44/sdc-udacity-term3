@@ -30,6 +30,7 @@ namespace LOCALIZATION {
     const string SENSOR_FUSION_DATA = "sensor_fusion";
 };
 
+// parameters for the model 
 namespace LIMITS {
     const double MAX_VELOCITY = 49.5;
     const double ACCELERATION = 0.2;

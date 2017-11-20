@@ -198,8 +198,6 @@ int main()
 							is_right_available = !isNotSafe(car_s, check_car_s);
 						}
 					}
-					
-					cout << "max vel " << max_velocity << endl;
 
 					if (is_too_close)
 					{
